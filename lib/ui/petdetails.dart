@@ -1,29 +1,68 @@
 import 'package:pet_care/model/reminder_model.dart';
+import 'package:pet_care/services/dio_client.dart';
 import 'package:pet_care/ui/your_profile.dart';
 import 'package:pet_care/widget/reminderwidget.dart';
+import 'package:pet_care/services/service_manager.dart';
+import 'package:pet_care/services/token_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:intl/intl.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 import '../intl/appcolor.dart';
 
 class PetDetails extends StatefulWidget {
-  const PetDetails({super.key});
+  final Map<String, dynamic>? petData;
+  
+  const PetDetails({super.key, this.petData});
 
   @override
   State<PetDetails> createState() => _PetDetailsState();
 }
 
 class _PetDetailsState extends State<PetDetails> {
+  final _nameController = TextEditingController();
+  final _speciesController = TextEditingController();
+  final _breedController = TextEditingController();
+  final _sizeController = TextEditingController();
+  final _nurseryController = TextEditingController();
   final DOB = TextEditingController();
+  
   String? selectedGender;
-  String? value;
+  bool _isLoading = false;
+  bool _isEditMode = false;
+  int? _petId;
+  final ServiceManager _serviceManager = ServiceManager();
   // void handleGenderChange(String? value) {
   //    setState(() {
   //     selectedGender = value;
 
   //   });
   // }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.petData != null) {
+      _isEditMode = true;
+      _petId = widget.petData!['id'];
+      _populateFields();
+    }
+  }
+
+  void _populateFields() {
+    final pet = widget.petData!;
+    _nameController.text = pet['name'] ?? '';
+    _speciesController.text = pet['color'] ?? '';
+    _breedController.text = pet['breed'] ?? '';
+    selectedGender = pet['gender'] == 'M' ? 'male' : 'female';
+    
+    // Calculate and set DOB from age if available
+    if (pet['age'] != null) {
+      final birthYear = DateTime.now().year - (pet['age'] as int);
+      DOB.text = '01/01/$birthYear';
+    }
+  }
 
   void customRadioButton(String? value) {
     setState(() {
@@ -33,9 +72,75 @@ class _PetDetailsState extends State<PetDetails> {
 
   @override
   void dispose() {
-    // Clean up the controller when the widget is removed
+    _nameController.dispose();
+    _speciesController.dispose();
+    _breedController.dispose();
+    _sizeController.dispose();
+    _nurseryController.dispose();
     DOB.dispose();
     super.dispose();
+  }
+
+  Future<void> _createPet() async {
+    if (_nameController.text.isEmpty || _breedController.text.isEmpty || selectedGender == null) {
+      Fluttertoast.showToast(msg: "Please fill required fields");
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _ensureAuthenticated();
+      
+      if (_isEditMode && _petId != null) {
+        // Update existing pet
+        await _serviceManager.petService.updatePet(
+          petId: _petId!,
+          name: _nameController.text,
+          breed: _breedController.text,
+          age: _calculateAge(),
+          gender: selectedGender == 'male' ? 'M' : 'F',
+          color: _speciesController.text,
+        );
+        Fluttertoast.showToast(msg: "Pet updated successfully!");
+      } else {
+        // Create new pet
+        final userId = await TokenStorage.getUserId() ?? 1;
+        await _serviceManager.petService.createPet(
+          owner: userId,
+          name: _nameController.text,
+          breed: _breedController.text,
+          age: _calculateAge(),
+          gender: selectedGender == 'male' ? 'M' : 'F',
+          color: _speciesController.text,
+        );
+        Fluttertoast.showToast(msg: "Pet created successfully!");
+      }
+      
+      Navigator.pop(context, true); // Return true to indicate success
+    } catch (e) {
+      Fluttertoast.showToast(msg: "Error: ${e.toString()}");
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  int _calculateAge() {
+    if (DOB.text.isEmpty) return 0;
+    try {
+      final birthDate = DateFormat('dd/MM/yyyy').parse(DOB.text);
+      final now = DateTime.now();
+      return now.year - birthDate.year;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<void> _ensureAuthenticated() async {
+    if (!await _serviceManager.authService.isLoggedIn()) {
+      Fluttertoast.showToast(msg: "Please login first");
+      throw Exception("User not authenticated");
+    }
   }
 
   bool isSwitched1 = false;
@@ -109,7 +214,7 @@ class _PetDetailsState extends State<PetDetails> {
                   ),
                   Spacer(),
                   Text(
-                    "Add pet detail",
+                    _isEditMode ? "Edit pet detail" : "Add pet detail",
                     style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -118,14 +223,17 @@ class _PetDetailsState extends State<PetDetails> {
                         fontStyle: FontStyle.normal),
                   ),
                   Spacer(),
-                  Text(
-                    "Save",
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.19,
-                        color: AppColor.figmavoilet,
-                        fontStyle: FontStyle.normal),
+                  InkWell(
+                    onTap: _isLoading ? null : _createPet,
+                    child: Text(
+                      "Save",
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.19,
+                          color: _isLoading ? Colors.grey : AppColor.figmavoilet,
+                          fontStyle: FontStyle.normal),
+                    ),
                   ),
                 ],
               ),
@@ -192,6 +300,7 @@ class _PetDetailsState extends State<PetDetails> {
                         fontStyle: FontStyle.normal),
                   ),
                   TextFormField(
+                    controller: _nameController,
                     cursorColor: Colors.grey,
                     decoration: InputDecoration(
                         suffixIcon: Padding(
@@ -202,7 +311,7 @@ class _PetDetailsState extends State<PetDetails> {
                         border: UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.grey),
                         ),
-                        labelText: "pet's name",
+                        labelText: "pet's name *",
                         labelStyle: TextStyle(color: Colors.grey),
                         focusedBorder: UnderlineInputBorder(
                             borderSide: BorderSide(color: Colors.grey))),
@@ -211,6 +320,7 @@ class _PetDetailsState extends State<PetDetails> {
                     height: 20,
                   ),
                   TextFormField(
+                    controller: _speciesController,
                     cursorColor: Colors.grey,
                     decoration: InputDecoration(
                         suffixIcon: Padding(
@@ -230,6 +340,7 @@ class _PetDetailsState extends State<PetDetails> {
                     height: 20,
                   ),
                   TextFormField(
+                    controller: _breedController,
                     cursorColor: Colors.grey,
                     decoration: InputDecoration(
                         suffixIcon: Padding(
@@ -240,7 +351,7 @@ class _PetDetailsState extends State<PetDetails> {
                         border: UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.grey),
                         ),
-                        labelText: "Breed",
+                        labelText: "Breed *",
                         labelStyle: TextStyle(color: Colors.grey),
                         focusedBorder: UnderlineInputBorder(
                             borderSide: BorderSide(color: Colors.grey))),
@@ -249,6 +360,7 @@ class _PetDetailsState extends State<PetDetails> {
                     height: 20,
                   ),
                   TextFormField(
+                    controller: _sizeController,
                     cursorColor: Colors.grey,
                     decoration: InputDecoration(
                         suffixIcon: Padding(
@@ -666,6 +778,7 @@ class _PetDetailsState extends State<PetDetails> {
                     height: 24,
                   ),
                   TextFormField(
+                    controller: _nurseryController,
                     cursorColor: Colors.grey,
                     decoration: InputDecoration(
                         suffixIcon: Padding(
@@ -776,24 +889,22 @@ class _PetDetailsState extends State<PetDetails> {
                   SizedBox(
                     height: 24,
                   ),
+
                   SizedBox(
                     width: 295,
                     height: 46,
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(context,
-                            MaterialPageRoute(builder: (context) {
-                          return YourProfile();
-                        }));
-                      },
-                      child: Text(
-                        "Save",
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            fontStyle: FontStyle.normal,
-                            color: Colors.white),
-                      ),
+                      onPressed: _isLoading ? null : _createPet,
+                      child: _isLoading
+                          ? CircularProgressIndicator(color: Colors.white)
+                          : Text(
+                              "Save",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  fontStyle: FontStyle.normal,
+                                  color: Colors.white),
+                            ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColor.figmabutton,
                       ),

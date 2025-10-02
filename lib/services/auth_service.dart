@@ -1,5 +1,6 @@
 import 'dio_client.dart';
 import 'api_exception.dart';
+import 'token_storage.dart';
 
 class AuthService {
   final DioClient _dioClient = DioClient();
@@ -10,6 +11,7 @@ class AuthService {
     required String password,
     required String firstName,
     required String lastName,
+    String? phone,
   }) async {
     try {
       final response = await _dioClient.post('auth/register/', data: {
@@ -18,6 +20,7 @@ class AuthService {
         'password': password,
         'first_name': firstName,
         'last_name': lastName,
+        if (phone != null) 'phone': phone,
       });
       return response.data;
     } catch (e) {
@@ -34,9 +37,35 @@ class AuthService {
         'username': username,
         'password': password,
       });
-      return response.data;
+      
+      final data = response.data;
+      if (data['token'] != null) {
+        await TokenStorage.saveToken(
+          data['token'],
+          userId: data['user_id'],
+        );
+        _dioClient.setAuthToken(data['token']);
+      }
+      
+      return data;
     } catch (e) {
       throw ApiException('Login failed: ${e.toString()}');
+    }
+  }
+
+  Future<void> logout() async {
+    await TokenStorage.clearToken();
+    _dioClient.clearAuthToken();
+  }
+
+  Future<bool> isLoggedIn() async {
+    return await TokenStorage.hasToken();
+  }
+
+  Future<void> loadStoredToken() async {
+    final token = await TokenStorage.getToken();
+    if (token != null) {
+      _dioClient.setAuthToken(token);
     }
   }
 }

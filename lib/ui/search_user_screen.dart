@@ -1,13 +1,13 @@
-import 'dart:math';
-
 import 'package:pet_care/model/search_model.dart';
+import 'package:pet_care/ui/select_specialist.dart';
 import 'package:pet_care/widget/popularspecialist_widget.dart';
 import 'package:pet_care/widget/search_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
-
+import '../services/service_manager.dart';
 import '../intl/appcolor.dart';
 import '../model/popularspecialist.dart';
+import 'selectspacialist.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -17,6 +17,11 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
+  final ServiceManager _serviceManager = ServiceManager();
+  List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _specialists = [];
+  bool _isLoading = true;
+
   List<SearchModel> searchlist = [
     SearchModel(IMG: "assets/images/vet.svg", name: "Veterinary"),
     SearchModel(IMG: "assets/images/grooming.svg", name: "Grooming"),
@@ -29,36 +34,44 @@ class _SearchScreenState extends State<SearchScreen> {
     SearchModel(IMG: "assets/images/other.svg", name: "Other"),
   ];
 
-  List<Popular> popularlist = [
-    Popular(tittle: "Cat Specialist"),
-    Popular(tittle: "Dog Specialist"),
-    Popular(tittle: "Ornithologist"),
-    Popular(tittle: "Dentist"),
-    Popular(tittle: "Surggeon"),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
 
-  List<Popular> Allspecialistlist = [
-    Popular(tittle: "Veterinarian"),
-    Popular(tittle: "Therapist"),
-    Popular(tittle: "Anesthetist"),
-    Popular(tittle: "Gastroenterologist"),
-    Popular(tittle: "Infectious desease"),
-    Popular(tittle: "Cardiologist"),
-    Popular(tittle: "Nurologist"),
-    Popular(tittle: "Oncologist"),
-    Popular(tittle: "Ornithologist"),
-    Popular(tittle: "Orthopedist"),
-    Popular(tittle: "Opthalmologist"),
-    Popular(tittle: "Radiologist"),
-    Popular(tittle: "Dentist"),
-    Popular(tittle: "Therapist"),
-    Popular(tittle: "Traumatologist"),
-    Popular(tittle: "Surgeon"),
-    Popular(tittle: "Dog Specialist"),
-    Popular(tittle: "Ornithologist"),
-    Popular(tittle: "Dentist"),
-    Popular(tittle: "Surggeon"),
-  ];
+  Future<void> _fetchData() async {
+    try {
+      final categories = await _serviceManager.veterinaryService.getServiceCategories();
+      final specialists = await _serviceManager.veterinaryService.getAllProviders();
+      setState(() {
+        _categories = categories;
+        _specialists = specialists;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      print('Error fetching data: $e');
+    }
+  }
+
+  void _searchSpecialists(String specialty) async {
+    try {
+      final results = await _serviceManager.veterinaryService.searchSpecialists(specialty: specialty);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SelectSpecialist(specialists: results, specialty: specialty),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error searching specialists: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +138,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   return InkWell(highlightColor: Colors.transparent,
                   splashFactory: NoSplash.splashFactory,
                       onTap: () {
-                        _showBottomSheet(context);
+                        _showBottomSheet(context, searchlist[index].name ?? '');
                       },
                       child: SearchWidget(search: searchlist[index]));
                 }),
@@ -137,7 +150,7 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  void _showBottomSheet(BuildContext context) {
+  void _showBottomSheet(BuildContext context, String category) {
     showModalBottomSheet(
       useSafeArea: true,
       isScrollControlled: true,
@@ -211,15 +224,23 @@ class _SearchScreenState extends State<SearchScreen> {
                           primary: false,
                           shrinkWrap: true,
                           itemBuilder: (context, index) {
-                            return PopularSpecialist(
-                                popular: popularlist[index]);
+                            final specialty = _categories.isNotEmpty && index < _categories.length 
+                                ? _categories[index]['name'] ?? 'Unknown'
+                                : 'Specialty ${index + 1}';
+                            return InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _searchSpecialists(specialty);
+                              },
+                              child: PopularSpecialist(popular: Popular(tittle: specialty)),
+                            );
                           },
                           separatorBuilder: (context, index) {
                             return Container(
                               height: 6,
                             );
                           },
-                          itemCount: popularlist.length),
+                          itemCount: _categories.length > 5 ? 5 : _categories.length),
                       SizedBox(
                         height: 32,
                       ),
@@ -237,15 +258,23 @@ class _SearchScreenState extends State<SearchScreen> {
                           primary: false,
                           shrinkWrap: true,
                           itemBuilder: (context, index) {
-                            return PopularSpecialist(
-                                popular: Allspecialistlist[index]);
+                            final specialty = _categories.isNotEmpty && index < _categories.length 
+                                ? _categories[index]['name'] ?? 'Unknown'
+                                : 'Specialty ${index + 1}';
+                            return InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _searchSpecialists(specialty);
+                              },
+                              child: PopularSpecialist(popular: Popular(tittle: specialty)),
+                            );
                           },
                           separatorBuilder: (context, index) {
                             return Container(
                               height: 6,
                             );
                           },
-                          itemCount: Allspecialistlist.length),
+                          itemCount: _categories.length),
                           
                     ],
                   ),

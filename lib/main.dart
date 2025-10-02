@@ -1,9 +1,11 @@
 import 'package:pet_care/ui/splash.dart';
-import 'package:pet_care/services/dio_client.dart';
+import 'package:pet_care/ui/petdetails.dart';
+import 'package:pet_care/services/service_manager.dart';
 import 'package:flutter/material.dart';
 
-void main() {
-  DioClient().init();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ServiceManager().initialize();
   runApp(const MyApp());
 }
 
@@ -20,6 +22,13 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const Splash(),
+      routes: {
+        '/add-pet': (context) => const PetDetails(),
+        '/edit-pet': (context) {
+          final petData = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return PetDetails(petData: petData);
+        },
+      },
     );
   }
 }
